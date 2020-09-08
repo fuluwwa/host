@@ -420,6 +420,32 @@ int main(int argc, char *argv[])
     //     return -1;
     // }
 
+    // OKR1 子设备属性上报和通知
+
+    /* MQTT 订阅topic功能示例, 请根据自己的业务需求进行使用 */
+    {
+        char *sub_topic = "/sys/a1zj4FWvEGL/nuNyj73tVh8qUhGBFRWb/thing/event/+/post_reply";
+
+        res = aiot_mqtt_sub(mqtt_handle, sub_topic, NULL, 1, NULL);
+        if (res < 0) {
+            printf("aiot_mqtt_sub failed, res: -0x%04X\n", -res);
+            return -1;
+        }
+    }
+
+    /* MQTT 发布消息功能示例, 请根据自己的业务需求进行使用 */
+    {
+        char *pub_topic = "/sys/a1zj4FWvEGL/nuNyj73tVh8qUhGBFRWb/thing/event/property/post";
+        char *pub_payload = "{\"id\":\"1\",\"version\":\"1.0\",\"params\":{\"LightSwitch\":0}}";
+
+        res = aiot_mqtt_pub(mqtt_handle, pub_topic, (uint8_t *)pub_payload, (uint32_t)strlen(pub_payload), 0);
+        if (res < 0) {
+            printf("aiot_mqtt_sub failed, res: -0x%04X\n", -res);
+            return -1;
+        }
+    }
+
+
     while(1) {
         sleep(1);
     }
