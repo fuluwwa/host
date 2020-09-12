@@ -19,6 +19,42 @@
 #include "aiot_sysdep_api.h"
 #include "aiot_mqtt_api.h"
 #include "aiot_dm_api.h"
+#include "aiot_subdev_api.h"
+
+aiot_subdev_dev_t g_subdev[] = {
+    {
+        "a1zj4FWvEGL",
+        "nuNyj73tVh8qUhGBFRWb",
+        "ad401a8b293df233ed97679ec2f219f1",
+        "AzV6bxB3cha8udho"
+    },
+	/*
+    {
+        "a13FN5TplKq",
+        "subdev_basic_demo_01",
+        "768XBgQwgOakz3K4uhOiLeeh9xjJQx6h",
+        "y7GSILD480lBSsP8"
+    },
+    {
+        "a13FN5TplKq",
+        "subdev_basic_demo_02",
+        "iwTZrbjbgNVChfuJkihjE5asekoyKoYv",
+        "y7GSILD480lBSsP8"
+    },
+    {
+        "a13FN5TplKq",
+        "subdev_basic_demo_03",
+        "fdutq35iKMYdcWWBuIINY26hsNhgFXWE",
+        "y7GSILD480lBSsP8"
+    },
+    {
+        "a13FN5TplKq",
+        "subdev_basic_demo_04",
+        "HCKv50YqgwdKhy5cE0Vz4aydmK2ojPvr",
+        "y7GSILD480lBSsP8"
+    }
+    */
+};
 
 /* 位于portfiles/aiot_port文件夹下的系统适配函数集合 */
 extern aiot_sysdep_portfile_t g_aiot_sysdep_portfile;
@@ -252,7 +288,7 @@ static void demo_dm_recv_handler(void *dm_handle, const aiot_dm_recv_t *recv, vo
 }
 
 /* 属性上报函数演示 */
-int32_t demo_send_property_post(void *dm_handle, char *params)
+int32_t demo_send_property_post(void *dm_handle, char *params, void *dev)
 {
     aiot_dm_msg_t msg;
 
@@ -260,11 +296,17 @@ int32_t demo_send_property_post(void *dm_handle, char *params)
     msg.type = AIOT_DMMSG_PROPERTY_POST;
     msg.data.property_post.params = params;
 
+    if(dev != NULL){
+        aiot_subdev_dev_t *sdev = (aiot_subdev_dev_t *)dev; 
+        msg.product_key = sdev->product_key;
+        msg.device_name = sdev->device_name;
+    }
+
     return aiot_dm_send(dm_handle, &msg);
 }
 
 /* 事件上报函数演示 */
-int32_t demo_send_event_post(void *dm_handle, char *event_id, char *params)
+int32_t demo_send_event_post(void *dm_handle, char *event_id, char *params, void *dev)
 {
     aiot_dm_msg_t msg;
 
@@ -272,6 +314,12 @@ int32_t demo_send_event_post(void *dm_handle, char *event_id, char *params)
     msg.type = AIOT_DMMSG_EVENT_POST;
     msg.data.event_post.event_id = event_id;
     msg.data.event_post.params = params;
+
+    if(dev != NULL){
+        aiot_subdev_dev_t *sdev = (aiot_subdev_dev_t *)dev; 
+        msg.product_key = sdev->product_key;
+        msg.device_name = sdev->device_name;
+    }
 
     return aiot_dm_send(dm_handle, &msg);
 }
@@ -301,11 +349,44 @@ int32_t demo_send_delete_desred_requset(void *dm_handle)
 }
 
 
+void demo_subdev_recv_handler(void *handle, const aiot_subdev_recv_t *packet, void *user_data)
+{
+    switch (packet->type) {
+        case AIOT_SUBDEVRECV_TOPO_ADD_REPLY:
+        case AIOT_SUBDEVRECV_TOPO_DELETE_REPLY:
+        case AIOT_SUBDEVRECV_TOPO_GET_REPLY:
+        case AIOT_SUBDEVRECV_BATCH_LOGIN_REPLY: 
+        case AIOT_SUBDEVRECV_BATCH_LOGOUT_REPLY: 
+        case AIOT_SUBDEVRECV_SUB_REGISTER_REPLY:
+        case AIOT_SUBDEVRECV_PRODUCT_REGISTER_REPLY: {
+            printf("msgid        : %d\n", packet->data.generic_reply.msg_id);
+            printf("code         : %d\n", packet->data.generic_reply.code);
+            printf("product key  : %s\n", packet->data.generic_reply.product_key);
+            printf("device name  : %s\n", packet->data.generic_reply.device_name);
+            printf("message      : %s\n", (packet->data.generic_reply.message == NULL)?("NULL"):(packet->data.generic_reply.message));
+            printf("data         : %s\n", packet->data.generic_reply.data);
+        }
+        break;
+        case AIOT_SUBDEVRECV_TOPO_CHANGE_NOTIFY: {
+            printf("msgid        : %d\n", packet->data.generic_notify.msg_id);
+            printf("product key  : %s\n", packet->data.generic_notify.product_key);
+            printf("device name  : %s\n", packet->data.generic_notify.device_name);
+            printf("params       : %s\n", packet->data.generic_notify.params);
+        }
+        break;
+        default: {
+
+        }
+    }
+}
+
+
 int main(int argc, char *argv[])
 {
     int32_t     res = STATE_SUCCESS;
     void       *dm_handle = NULL;
     void       *mqtt_handle = NULL;
+    void       *subdev_handle = NULL;
     char       *url = "iot-as-mqtt.cn-shanghai.aliyuncs.com"; /* 阿里云平台上海站点的域名后缀 */
     char        host[100] = {0}; /* 用这个数组拼接设备连接的云平台站点全地址, 规则是 ${productKey}.iot-as-mqtt.cn-shanghai.aliyuncs.com */
     uint16_t    port = 443;      /* 无论设备是否使用TLS连接阿里云平台, 目的端口都是443 */
@@ -356,7 +437,7 @@ int main(int argc, char *argv[])
     dm_handle = aiot_dm_init();
     if (dm_handle == NULL) {
         printf("aiot_dm_init failed");
-        return -1;
+        goto exit_1;
     }
     /* 配置MQTT实例句柄 */
     aiot_dm_setopt(dm_handle, AIOT_DMOPT_MQTT_HANDLE, mqtt_handle);
@@ -367,9 +448,8 @@ int main(int argc, char *argv[])
     res = aiot_mqtt_connect(mqtt_handle);
     if (res < STATE_SUCCESS) {
         /* 尝试建立连接失败, 销毁MQTT实例, 回收资源 */
-        aiot_mqtt_deinit(&mqtt_handle);
         printf("aiot_mqtt_connect failed: -0x%04X\n", -res);
-        return -1;
+        goto exit_2;
     }
 
     /* 创建一个单独的线程, 专用于执行aiot_mqtt_process, 它会自动发送心跳保活, 以及重发QoS1的未应答报文 */
@@ -377,7 +457,7 @@ int main(int argc, char *argv[])
     res = pthread_create(&g_mqtt_process_thread, NULL, demo_mqtt_process_thread, mqtt_handle);
     if (res < 0) {
         printf("pthread_create demo_mqtt_process_thread failed: %d\n", res);
-        return -1;
+        goto exit_3;
     }
 
     /* 创建一个单独的线程用于执行aiot_mqtt_recv, 它会循环收取服务器下发的MQTT消息, 并在断线时自动重连 */
@@ -385,20 +465,110 @@ int main(int argc, char *argv[])
     res = pthread_create(&g_mqtt_recv_thread, NULL, demo_mqtt_recv_thread, mqtt_handle);
     if (res < 0) {
         printf("pthread_create demo_mqtt_recv_thread failed: %d\n", res);
-        return -1;
+        goto exit_4;
     }
+
+    subdev_handle = aiot_subdev_init();
+    if (subdev_handle == NULL) {
+        printf("aiot_subdev_init failed\n");
+        goto exit_5;
+    }
+
+    aiot_subdev_setopt(subdev_handle, AIOT_SUBDEVOPT_MQTT_HANDLE, mqtt_handle);
+    aiot_subdev_setopt(subdev_handle, AIOT_SUBDEVOPT_RECV_HANDLER, demo_subdev_recv_handler);
+
+    res = aiot_subdev_send_topo_add(subdev_handle, g_subdev, sizeof(g_subdev)/sizeof(aiot_subdev_dev_t));
+    if (res < STATE_SUCCESS) {
+        printf("aiot_subdev_send_topo_add failed, res: -0x%04X\n", -res);
+        goto exit_6;
+    }
+
+    sleep(2);
+
+    // aiot_subdev_send_topo_delete(subdev_handle, g_subdev, sizeof(g_subdev)/sizeof(aiot_subdev_dev_t));
+    // if (res < STATE_SUCCESS) {
+    //     printf("aiot_subdev_send_topo_delete failed, res: -0x%04X\n", -res);
+    //     aiot_subdev_deinit(&subdev_handle);
+    //     demo_mqtt_stop(&mqtt_handle);
+    //     return -1;
+    // }
+
+    // sleep(2);
+
+    // aiot_subdev_send_topo_get(subdev_handle);
+    // if (res < STATE_SUCCESS) {
+    //     printf("aiot_subdev_send_topo_get failed, res: -0x%04X\n", -res);
+    //     aiot_subdev_deinit(&subdev_handle);
+    //     demo_mqtt_stop(&mqtt_handle);
+    //     return -1;
+    // }
+
+    // sleep(2);
+
+    // aiot_subdev_send_sub_register(subdev_handle, g_subdev, sizeof(g_subdev)/sizeof(aiot_subdev_dev_t));
+    // if (res < STATE_SUCCESS) {
+    //     printf("aiot_subdev_send_sub_register failed, res: -0x%04X\n", -res);
+    //     aiot_subdev_deinit(&subdev_handle);
+    //     demo_mqtt_stop(&mqtt_handle);
+    //     return -1;
+    // }
+
+    // sleep(2);
+
+    // aiot_subdev_send_product_register(subdev_handle, g_subdev, sizeof(g_subdev)/sizeof(aiot_subdev_dev_t));
+    // if (res < STATE_SUCCESS) {
+    //     printf("aiot_subdev_send_product_register failed, res: -0x%04X\n", -res);
+    //     aiot_subdev_deinit(&subdev_handle);
+    //     demo_mqtt_stop(&mqtt_handle);
+    //     return -1;
+    // }
+
+    // sleep(2);
+
+    aiot_subdev_send_batch_login(subdev_handle, g_subdev, sizeof(g_subdev)/sizeof(aiot_subdev_dev_t));
+    if (res < STATE_SUCCESS) {
+        printf("aiot_subdev_send_batch_login failed, res: -0x%04X\n", -res);
+        goto exit_6;
+    }
+
+    sleep(2);
+
+    // aiot_subdev_send_batch_logout(subdev_handle, g_subdev, sizeof(g_subdev)/sizeof(aiot_subdev_dev_t));
+    // if (res < STATE_SUCCESS) {
+    //     printf("aiot_subdev_send_batch_logout failed, res: -0x%04X\n", -res);
+    //     aiot_subdev_deinit(&subdev_handle);
+    //     demo_mqtt_stop(&mqtt_handle);
+    //     return -1;
+    // }
 
     /* 主循环进入休眠 */
     while (1) {
         /* TODO: 以下代码演示了简单的属性上报和事件上报, 用户可取消注释观察演示效果 */
         
-        //demo_send_property_post(dm_handle, "{\"LightSwitch\": 0}");
-        //demo_send_event_post(dm_handle, "Error", "{\"ErrorCode\": 0}");
+        demo_send_property_post(dm_handle, "{\"powerstate\": 0}", &g_subdev[0]);
+        //demo_send_event_post(dm_handle, "Error", "{\"ErrorCode\": 0}", &g_subdev[0]);
         
 
         sleep(10);
     }
 
+exit_6:
+    /* 销毁DATA-MODEL实例, 一般不会运行到这里 */
+    res = aiot_dm_deinit(&dm_handle);
+    if (res < STATE_SUCCESS) {
+        printf("aiot_dm_deinit failed: -0x%04X\n", -res);
+        return -1;
+    }
+
+exit_5:
+    g_mqtt_recv_thread_running = 0;
+    pthread_join(g_mqtt_recv_thread, NULL);
+
+exit_4:
+    g_mqtt_process_thread_running = 0;
+    pthread_join(g_mqtt_process_thread, NULL);
+
+exit_3:
     /* 断开MQTT连接, 一般不会运行到这里 */
     res = aiot_mqtt_disconnect(mqtt_handle);
     if (res < STATE_SUCCESS) {
@@ -407,6 +577,7 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+exit_2:    
     /* 销毁DATA-MODEL实例, 一般不会运行到这里 */
     res = aiot_dm_deinit(&dm_handle);
     if (res < STATE_SUCCESS) {
@@ -414,17 +585,13 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+exit_1:
     /* 销毁MQTT实例, 一般不会运行到这里 */
     res = aiot_mqtt_deinit(&mqtt_handle);
     if (res < STATE_SUCCESS) {
         printf("aiot_mqtt_deinit failed: -0x%04X\n", -res);
         return -1;
     }
-
-    g_mqtt_process_thread_running = 0;
-    g_mqtt_recv_thread_running = 0;
-    pthread_join(g_mqtt_process_thread, NULL);
-    pthread_join(g_mqtt_recv_thread, NULL);
 
     return 0;
 }
